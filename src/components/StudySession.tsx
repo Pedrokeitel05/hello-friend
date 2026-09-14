@@ -1,0 +1,58 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { BookOpen, Check, ChevronLeft, Clock3, Flame, Pause, Play, RotateCcw, Sparkles, Target, TimerReset, X } from "lucide-react";
+import { scheduleRevisions, performance } from "../lib/studyEngine";
+
+type SavedRecord = { date: string; subject: string; topic: string; minutes: number; correct: number; wrong: number; studyId?: string };
+type SavedRevision = ReturnType<typeof scheduleRevisions>[number];
+
+const subjects = [
+  { name: "Português", topics: ["Pronomes", "Concordância", "Regência", "Pontuação"] },
+  { name: "Legislação", topics: ["LEP", "ECA", "Maria da Penha", "Direitos Humanos"] },
+  { name: "Raciocínio Lógico", topics: ["Proposições", "Porcentagem", "Conjuntos", "Probabilidade"] },
+  { name: "Informática", topics: ["Segurança", "Windows", "Internet", "Office"] },
+  { name: "Conhecimentos Gerais", topics: ["RS", "Brasil", "Atualidades", "Sistema Prisional"] },
+];
+
+const today = () => new Date().toLocaleDateString("sv-SE");
+const read = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };
+const formatTime = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+export default function StudySession() {
+  const navigate = useNavigate();
+  const [subject, setSubject] = useState(subjects[0].name);
+  const [topic, setTopic] = useState(subjects[0].topics[0]);
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [correct, setCorrect] = useState(0);
+  const [wrong, setWrong] = useState(0);
+  const [finished, setFinished] = useState(false);
+  const [saved, setSaved] = useState<SavedRecord | null>(null);
+  const [revisions, setRevisions] = useState<SavedRevision[]>([]);
+
+  const selected = useMemo(() => subjects.find(s => s.name === subject) ?? subjects[0], [subject]);
+  const accuracy = performance(correct, wrong);
+  const minutes = Math.floor(seconds / 60);
+
+  useEffect(() => { if (!running) return; const id = window.setInterval(() => setSeconds(s => s + 1), 1000); return () => window.clearInterval(id); }, [running]);
+  useEffect(() => { setTopic(selected.topics[0]); }, [subject]);
+
+  const finish = () => {
+    if (seconds < 60) return;
+    const studyId = `study-${Date.now()}`;
+    const record: SavedRecord = { date: today(), subject, topic, minutes: Math.max(1, minutes), correct, wrong, studyId };
+    const revisionItems = scheduleRevisions(record, studyId);
+    const records = read<SavedRecord[]>("estuda-study-records", []);
+    const oldRevisions = read<SavedRevision[]>("estuda-revisions", []);
+    localStorage.setItem("estuda-study-records", JSON.stringify([...records, record]));
+    localStorage.setItem("estuda-revisions", JSON.stringify([...oldRevisions, ...revisionItems]));
+    setRunning(false); setSaved(record); setRevisions(revisionItems); setFinished(true);
+  };
+
+  if (finished && saved) return <div className="min-h-screen bg-[#f7f8f7] text-[#14231d]"><div className="mx-auto max-w-[980px] px-4 py-8 sm:px-6"><button onClick={() => navigate({ to: "/plano-de-estudos" })} className="mb-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#64726a]"><ChevronLeft size={15}/> Voltar ao plano</button><div className="overflow-hidden rounded-[28px] border border-[#dfe7e2] bg-white shadow-sm"><div className="bg-[#07372b] p-7 text-white sm:p-9"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10"><Check size={24}/></div><p className="mt-5 text-[9px] font-black uppercase tracking-[.25em] text-[#9fc1b5]">Sessão concluída</p><h1 className="mt-2 text-3xl font-black tracking-[-.04em]">Bom trabalho. Registro salvo.</h1><p className="mt-2 text-xs text-[#bfd4cc]">{saved.subject} · {saved.topic}</p></div><div className="grid gap-3 p-5 sm:grid-cols-3 sm:p-7"><Metric label="Horas líquidas" value={formatTime(saved.minutes * 60)} icon={<Clock3 size={16}/>}/><Metric label="Questões" value={String(saved.correct + saved.wrong)} icon={<Target size={16}/>}/><Metric label="Aproveitamento" value={`${performance(saved.correct, saved.wrong)}%`} icon={<Flame size={16}/>}/></div><div className="border-t border-[#edf1ee] p-5 sm:p-7"><div className="flex items-center gap-2"><Sparkles size={17} className="text-[#08754f]"/><h2 className="text-sm font-black">Revisões geradas automaticamente</h2></div><p className="mt-1 text-[10px] text-[#7c8981]">O ciclo usa os intervalos definidos pelo Estuda Thê!: 1, 7, 30 e 60 dias.</p><div className="mt-5 grid gap-2 sm:grid-cols-4">{revisions.map(r => <div key={r.id} className="rounded-xl bg-[#f5f8f6] p-3"><div className="text-[9px] font-black text-[#08754f]">D+{r.interval}</div><div className="mt-1 text-[11px] font-black">{new Date(`${r.date}T12:00:00`).toLocaleDateString("pt-BR")}</div></div>)}</div><div className="mt-6 flex flex-wrap gap-2"><button onClick={() => navigate({ to: "/plano-de-estudos" })} className="rounded-xl bg-[#08754f] px-4 py-3 text-[10px] font-black text-white">Voltar ao planejamento</button><button onClick={() => { setFinished(false); setSaved(null); setRevisions([]); setSeconds(0); setCorrect(0); setWrong(0); }} className="rounded-xl border border-[#dfe6e1] px-4 py-3 text-[10px] font-black text-[#526159]">Nova sessão</button></div></div></div></div></div>;
+
+  return <div className="min-h-screen bg-[#f7f8f7] text-[#14231d]"><div className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6"><button onClick={() => navigate({ to: "/plano-de-estudos" })} className="mb-5 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#64726a]"><ChevronLeft size={15}/> Plano de Estudos</button><div className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]"><section className="overflow-hidden rounded-[24px] bg-[#07372b] text-white shadow-[0_18px_40px_rgba(5,48,37,.13)]"><div className="flex items-center justify-between border-b border-white/10 px-6 py-5"><div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10"><BookOpen size={15}/></div><span className="text-[10px] font-black uppercase tracking-[.18em]">Sessão de estudo</span></div><span className="rounded-lg bg-white/10 px-2 py-1 text-[8px] font-black text-[#b7d1c7]">HORAS LÍQUIDAS</span></div><div className="px-6 py-10 text-center sm:py-14"><div className="text-6xl font-black tabular-nums tracking-[-.06em] sm:text-7xl">{formatTime(seconds)}</div><p className="mt-3 text-[10px] text-[#9ebbb1]">O relógio só contabiliza enquanto a sessão está ativa.</p><div className="mt-8 flex justify-center gap-2"><button onClick={() => setRunning(v => !v)} className="flex min-w-[135px] items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-[10px] font-black text-[#07372b]">{running ? <><Pause size={14}/> Pausar</> : <><Play size={14} fill="currentColor"/> Iniciar</>}</button><button onClick={() => { setRunning(false); setSeconds(0); }} className="flex items-center justify-center rounded-xl border border-white/10 bg-white/[.06] px-4 py-3 text-[#c3d6cf]" title="Zerar"><RotateCcw size={15}/></button></div></div><div className="grid grid-cols-2 border-t border-white/10"><div className="p-4 text-center"><div className="text-lg font-black">{correct}</div><div className="text-[8px] font-black uppercase tracking-widest text-[#8fb7a9]">Acertos</div></div><div className="border-l border-white/10 p-4 text-center"><div className="text-lg font-black">{wrong}</div><div className="text-[8px] font-black uppercase tracking-widest text-[#8fb7a9]">Erros</div></div></div></section><section className="rounded-[24px] border border-[#dfe7e2] bg-white p-6 shadow-sm"><div className="flex items-center gap-2 text-[#08754f]"><TimerReset size={17}/><span className="text-[10px] font-black uppercase tracking-[.16em] text-[#68756e]">Registro da sessão</span></div><h2 className="mt-3 text-xl font-black tracking-[-.03em]">O que você estudou?</h2><div className="mt-6 space-y-4"><label className="block"><span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[#77847c]">Matéria</span><select value={subject} onChange={e => setSubject(e.target.value)} className="w-full rounded-xl border border-[#dfe6e1] bg-[#f8faf8] px-3 py-3 text-xs font-bold outline-none">{subjects.map(s => <option key={s.name}>{s.name}</option>)}</select></label><label className="block"><span className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-[#77847c]">Assunto</span><select value={topic} onChange={e => setTopic(e.target.value)} className="w-full rounded-xl border border-[#dfe6e1] bg-[#f8faf8] px-3 py-3 text-xs font-bold outline-none">{selected.topics.map(t => <option key={t}>{t}</option>)}</select></label><div className="grid grid-cols-2 gap-3"><Counter label="Acertos" value={correct} onChange={setCorrect} positive/><Counter label="Erros" value={wrong} onChange={setWrong}/></div></div><div className="mt-6 rounded-xl bg-[#eef6f1] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-bold text-[#63746b]">Aproveitamento</span><b className="text-sm font-black text-[#08754f]">{accuracy}%</b></div><div className="mt-2 h-1.5 rounded-full bg-[#dbe8e0]"><div className="h-full rounded-full bg-[#15956b] transition-all" style={{ width: `${accuracy}%` }}/></div></div><button disabled={seconds < 60} onClick={finish} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#08754f] px-4 py-3.5 text-[10px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Check size={14}/> Finalizar e salvar sessão</button>{seconds < 60 && <p className="mt-2 text-center text-[8px] font-semibold text-[#9a655b]">Estude por pelo menos 1 minuto para registrar a sessão.</p>}</section></div></div></div>;
+}
+
+function Metric({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) { return <div className="rounded-xl bg-[#f5f8f6] p-4"><div className="flex items-center gap-2 text-[#08754f]">{icon}<span className="text-[8px] font-black uppercase tracking-widest text-[#7a877f]">{label}</span></div><div className="mt-2 text-xl font-black">{value}</div></div>; }
+function Counter({ label, value, onChange, positive }: { label: string; value: number; onChange: (n: number) => void; positive?: boolean }) { return <div className="rounded-xl border border-[#e4eae6] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-black text-[#69766e]">{label}</span><span className={`text-[8px] font-black ${positive ? "text-[#08754f]" : "text-[#a55a4c]"}`}>{positive ? "+" : "−"}</span></div><div className="mt-2 flex items-center justify-between gap-2"><button onClick={() => onChange(Math.max(0, value - 1))} className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f1f4f2] text-[#68756d]">−</button><b className="text-lg font-black">{value}</b><button onClick={() => onChange(value + 1)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf7f2] text-[#08754f">+</button></div></div>; }
