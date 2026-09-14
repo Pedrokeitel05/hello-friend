@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import type { MouseEvent } from "react";
 import EstudaDashboardFinal from "./EstudaDashboardFinal";
 
 const routes: Record<string, string> = {
@@ -13,7 +14,7 @@ const routes: Record<string, string> = {
 export default function DashboardWithNavigation() {
   const navigate = useNavigate();
 
-  function handleClick(event: React.MouseEvent<HTMLDivElement>) {
+  function handleClick(event: MouseEvent<HTMLDivElement>) {
     const button = (event.target as HTMLElement).closest("button");
     if (!button) return;
     const label = button.textContent?.replace(/\d+/g, "").trim() ?? "";
